@@ -10,7 +10,7 @@ class LocalisationPage extends StatelessWidget {
         backgroundColor: Colors.amberAccent,
         title: Text('Localisation'),
       ),
-      body: Center(child: Text('Localisation partagée entre utilisateurs.')),
+      body: Center(child: Text('Localisation')),
 
       bottomNavigationBar: BottomNavigationBar(
         items: const [

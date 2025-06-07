@@ -1,143 +1,151 @@
 import 'package:flutter/material.dart';
 import 'package:ping_discover_network_plus/ping_discover_network_plus.dart';
 import 'package:wifi_info_plugin_plus/wifi_info_plugin_plus.dart';
-import 'package:logger/logger.dart';
-import 'package:flutter/foundation.dart'; // pour kReleaseMode
-
-// Initialisation du logger avec désactivation en mode production
-final Logger logger = Logger(level: kReleaseMode ? Level.nothing : Level.debug);
 
 class AnalyseReseauPage extends StatefulWidget {
-  const AnalyseReseauPage({super.key});
+  const AnalyseReseauPage({Key? key}) : super(key: key);
 
   @override
   State<AnalyseReseauPage> createState() => _AnalyseReseauPageState();
 }
 
 class _AnalyseReseauPageState extends State<AnalyseReseauPage> {
-  List<String> ipTrouvees = [];
-  bool enCours = false;
-  String localIp = '';
-  String ipEnCours = '';
-  int totalScan = 0;
-  int currentScan = 0;
-  final TextEditingController portController = TextEditingController(
-    text: '80',
-  );
+  List<String> ipsTrouvees = []; // liste des IP détectées
+  bool scanEnCours = false; // pour savoir si le scan est en cours
+  String ipLocale = ''; // IP locale de l'appareil
+  String ipActuelle = ''; // IP en train d'être scannée
+  int total = 254; // nombre total d'IP à scanner
+  int scanActuel = 0; // compteur d'IP déjà scannées
+  final portController = TextEditingController();
 
-  Future<void> analyserReseau() async {
+  @override
+  void initState() {
+    super.initState();
+    portController.text = '80'; // port par défaut
+  }
+
+  void commencerScan() async {
+    // on démarre le scan, on remet tout à zéro
     setState(() {
-      enCours = true;
-      ipTrouvees.clear();
-      ipEnCours = '';
-      totalScan = 254; 
-      // totalScan = 20; 
-      currentScan = 0;
+      scanEnCours = true;
+      ipsTrouvees.clear();
+      ipActuelle = '';
+      scanActuel = 0;
     });
 
-    logger.i('🔍 Début de l’analyse réseau');
-
-    final wifiDetails = await WifiInfoPlugin.wifiDetails;
-    final ip = wifiDetails?.ipAddress ?? '';
+    // on récupère l'IP locale
+    final wifi = await WifiInfoPlugin.wifiDetails;
+    final ip = wifi?.ipAddress ?? '';
 
     if (ip.isEmpty) {
+      // si on n'a pas pu avoir l'IP, on arrête tout
       setState(() {
-        localIp = 'Impossible de récupérer l’adresse IP.';
-        enCours = false;
+        ipLocale = ' IP non trouvée';
+        scanEnCours = false;
       });
-      logger.w(' Impossible de récupérer l’adresse IP locale.');
       return;
     }
 
     setState(() {
-      localIp = ip;
+      ipLocale = ip; // on affiche l'IP locale
     });
-    logger.i(' Adresse IP locale : $ip');
 
-    final subnet = ip.substring(0, ip.lastIndexOf('.'));
-    int port = int.tryParse(portController.text) ?? 80;
-    logger.i(' Scan du réseau $subnet.0/24 sur le port $port');
+    // on récupère le début du réseau (ex: 192.168.1)
+    final sousReseau = ip.substring(0, ip.lastIndexOf('.'));
+    final port = int.tryParse(portController.text) ?? 80; // port à scanner
 
-    // Scan tout le réseau (de .1 à .254)
-    final stream = NetworkAnalyzer.i.discover(subnet, port);
-    // Si la lib supporte:
-    // final stream = NetworkAnalyzer.i.discover(subnet, port, first: 1, last: 20); // <-- Limite le scan pour tester
+    // on lance le scan sur le réseau local
+    final scan = NetworkAnalyzer.i.discover(sousReseau, port);
 
-    stream
-        .listen((NetworkAddress addr) {
+    // on écoute les résultats au fur et à mesure
+    scan
+        .listen((adresse) {
           setState(() {
-            ipEnCours = addr.ip;
-            currentScan++;
-            if (addr.exists) {
-              ipTrouvees.add(addr.ip);
+            ipActuelle = adresse.ip; // IP en cours de scan
+            scanActuel++; // on augmente le compteur
+            if (adresse.exists) {
+              ipsTrouvees.add(adresse.ip); // on ajoute si appareil trouvé
             }
           });
-          if (addr.exists) {
-            logger.i(' Appareil détecté : ${addr.ip}');
-          }
         })
         .onDone(() {
+          // quand le scan est fini, on met à jour l'état
           setState(() {
-            enCours = false;
-            ipEnCours = '';
+            scanEnCours = false;
+            ipActuelle = '';
           });
-          logger.i(
-            ' Analyse réseau terminée. ${ipTrouvees.length} appareil(s) trouvé(s).',
-          );
         });
   }
 
   @override
   Widget build(BuildContext context) {
-    double progress = totalScan > 0 ? currentScan / totalScan : 0;
     return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 217, 209, 209),
+      backgroundColor: const Color.fromARGB(
+        255,
+        217,
+        209,
+        209,
+      ), // couleur de fond
       appBar: AppBar(
-        backgroundColor: Colors.amberAccent,
-        title: const Text('Analyse réseau'),
+        backgroundColor: Colors.amberAccent, // couleur de la barre du haut
+        title: const Text('Scanner réseau'),
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16.0), // marge autour
         child: Column(
           children: [
             TextField(
-              controller: portController,
+              controller: portController, // champ pour entrer le port
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'Port',
+                labelText: 'Port à scanner',
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 15),
             ElevatedButton(
-              onPressed: enCours ? null : analyserReseau,
-              child: Text(enCours ? 'Analyse en cours...' : 'Lancer l’analyse'),
+              onPressed:
+                  scanEnCours
+                      ? null
+                      : commencerScan, // bouton désactivé pendant le scan
+              child: Text(
+                scanEnCours ? 'Scan en cours...' : 'Démarrer le scan',
+              ),
             ),
-            const SizedBox(height: 20),
-            Text('Adresse IP locale : $localIp'),
-            const SizedBox(height: 10),
-            if (enCours) ...[
-              LinearProgressIndicator(value: progress),
+            const SizedBox(height: 15),
+            Text('Votre IP : $ipLocale'), // affichage de l'IP locale
+            const SizedBox(height: 15),
+            if (scanEnCours) ...[
+              LinearProgressIndicator(
+                value: scanActuel / total,
+              ), // barre de progression
               const SizedBox(height: 10),
-              Text('Scan de : $ipEnCours'),
-              Text('Progression : $currentScan / $totalScan'),
-              Text('IP trouvées : ${ipTrouvees.length}'),
+              Text('En cours : $ipActuelle'), // IP en cours de scan
+              Text('Progression : $scanActuel / $total'), // avancement
+              Text(
+                'Appareils trouvés : ${ipsTrouvees.length}',
+              ), // nombre d'appareils détectés
             ],
-            const SizedBox(height: 10),
-            enCours
-                ? const CircularProgressIndicator()
+            const SizedBox(height: 15),
+            scanEnCours
+                ? const CircularProgressIndicator() // roue qui tourne pendant le scan
                 : Expanded(
                   child:
-                      ipTrouvees.isEmpty
-                          ? const Text('Aucun appareil détecté.')
+                      ipsTrouvees.isEmpty
+                          ? const Text(
+                            'Aucun appareil détecté',
+                          ) // message si rien trouvé
                           : ListView.builder(
-                            itemCount: ipTrouvees.length,
-                            itemBuilder: (context, index) {
-                              return ListTile(
-                                leading: const Icon(Icons.devices),
-                                title: Text(ipTrouvees[index]),
-                              );
-                            },
+                            itemCount: ipsTrouvees.length,
+                            itemBuilder:
+                                (context, index) => ListTile(
+                                  leading: const Icon(
+                                    Icons.wifi,
+                                  ), // icône devant chaque IP
+                                  title: Text(
+                                    ipsTrouvees[index],
+                                  ), // IP détectée
+                                ),
                           ),
                 ),
           ],
